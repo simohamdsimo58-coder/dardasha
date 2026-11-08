@@ -1,0 +1,83 @@
+name: Build APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Create project and build
+        run: |
+          mkdir -p android-app/app/src/main/java/com/apkbuilder/app android-app/app/src/main/assets
+          cp index.html android-app/app/src/main/assets/index.html || echo "<h1>Hello</h1>" > android-app/app/src/main/assets/index.html
+          cat > android-app/settings.gradle <<'EOF'
+          include ':app'
+          EOF
+          cat > android-app/build.gradle <<'EOF'
+          buildscript {
+            repositories { google(); mavenCentral() }
+            dependencies { classpath 'com.android.application:8.1.4' }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          EOF
+          cat > android-app/app/build.gradle <<'EOF'
+          apply plugin: 'com.android.application'
+          android {
+            namespace 'com.apkbuilder.app'
+            compileSdk 34
+            defaultConfig {
+              applicationId 'com.apkbuilder.app'
+              minSdk 24
+              targetSdk 34
+              versionCode 1
+              versionName '1.0'
+            }
+            buildTypes { release { minifyEnabled false } }
+            compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+          }
+          EOF
+          cat > android-app/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <application android:label="My App" android:allowBackup="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <activity android:name=".MainActivity" android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN" />
+                  <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+              </activity>
+            </application>
+          </manifest>
+          EOF
+          cat > android-app/app/src/main/java/com/apkbuilder/app/MainActivity.java <<'EOF'
+          package com.apkbuilder.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          public class MainActivity extends Activity {
+            protected void onCreate(Bundle b) {
+              super.onCreate(b);
+              WebView w = new WebView(this);
+              setContentView(w);
+              w.getSettings().setJavaScriptEnabled(true);
+              w.getSettings().setDomStorageEnabled(true);
+              w.loadUrl("file:///android_asset/index.html");
+            }
+          }
+          EOF
+          cd android-app
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip
+          ./gradle-8.5/bin/gradle assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-app-apk
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
